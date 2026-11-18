@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.db import connect
+from app.modules import late_hit_sidecar
 from app.seed import idle_timeout_sec
 from app.services import ingest as ingest_svc
 from app.services import sessions as sess_svc
@@ -17,6 +18,9 @@ def overview():
             "sessions": conn.execute("SELECT COUNT(*) AS c FROM sessions").fetchone()["c"],
             "hits_primary": conn.execute(
                 "SELECT COUNT(*) AS c FROM hits WHERE channel='primary'"
+            ).fetchone()["c"],
+            "sidecar": conn.execute(
+                f"SELECT COUNT(*) AS c FROM {late_hit_sidecar.TABLE}"
             ).fetchone()["c"],
             "quarantine": conn.execute("SELECT COUNT(*) AS c FROM quarantine").fetchone()["c"],
             "idle_timeout_sec": idle_timeout_sec(conn),
@@ -66,6 +70,16 @@ def list_quarantine():
             "SELECT id, visitor_id, reason, member_json, created_at FROM quarantine ORDER BY id DESC"
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@router.get("/late-sidecar")
+def list_late_sidecar(visitor_id: str | None = None):
+    """迟到旁路核证：只读，不提供任何写/迁回入口。"""
+    conn = connect()
+    try:
+        return late_hit_sidecar.list_sidecar(conn, visitor_id)
     finally:
         conn.close()
 

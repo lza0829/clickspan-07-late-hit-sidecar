@@ -3,10 +3,17 @@ import uuid
 from datetime import datetime, timezone
 
 from app.db import FIXTURES_DIR, connect
+from app.modules import late_hit_sidecar as sidecar
 
 
 def run_batch() -> dict:
-    """基座装载：按夹具追加击点；超时切会话 / 脏点隔离留给功能题空桩。"""
+    """基座装载：按夹具追加击点；超时切会话 / 脏点隔离留给功能题空桩。
+
+    late_hit_sidecar（入口分流路径）：每批同一事务内逐点判定，同访客
+    「无 open + 有 closed」的击点直接写入独立旁路表——不触碰任何 closed
+    会话成员、不自动开新 open、不增加正式 hit_count/证明；任一环节抛错
+    整趟回滚。
+    """
     path = FIXTURES_DIR / "ingest_batch.json"
     if not path.exists():
         return {"ok": False, "error": "缺少 ingest_batch.json"}
@@ -18,6 +25,7 @@ def run_batch() -> dict:
     try:
         conn.execute("BEGIN IMMEDIATE")
         written = 0
+        sidecar_written = 0
         for hit in hits:
             vid = hit["visitor_id"]
             exists = conn.execute("SELECT 1 FROM visitors WHERE id=?", (vid,)).fetchone()
@@ -26,6 +34,15 @@ def run_batch() -> dict:
                     "INSERT INTO visitors(id, label, created_at) VALUES (?,?,?)",
                     (vid, hit.get("visitor_label") or vid, _now()),
                 )
+
+            # 入口分流：无 open 且最近会话已 closed → 迟到旁路，不进正式通道。
+            if sidecar.should_divert(conn, vid):
+                closed = sidecar.latest_closed_session(conn, vid)
+                closed_sid = closed["id"] if closed else None
+                if sidecar.divert_hit(conn, hit, batch_id, _now(), closed_sid):
+                    sidecar_written += 1
+                continue
+
             # 基座：挂到该访客最新 open 会话；无则新建（不做超时切分）
             sess = conn.execute(
                 """
@@ -99,7 +116,12 @@ def run_batch() -> dict:
                         _now(),
                     ),
                 )
-        report = {"batch_id": batch_id, "written": written, "input": len(hits)}
+        report = {
+            "batch_id": batch_id,
+            "written": written,
+            "sidecar": sidecar_written,
+            "input": len(hits),
+        }
         conn.execute(
             "INSERT OR REPLACE INTO ingest_batches(id, created_at, report_json) VALUES (?,?,?)",
             (batch_id, _now(), json.dumps(report, ensure_ascii=False)),

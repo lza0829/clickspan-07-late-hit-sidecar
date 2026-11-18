@@ -3,6 +3,8 @@
   "hits": [
     {"id": "H6", "visitor_id": "V-1001", "event_ts": "2026-11-17T09:50:00Z", "page_path": "/checkout", "event_name": "view", "visitor_label": "访客甲"},
     {"id": "H7", "visitor_id": "V-1001", "event_ts": "2026-11-17T09:51:00Z", "page_path": "/checkout", "event_name": "click"},
-    {"id": "H8", "visitor_id": "V-1003", "event_ts": "2026-11-17T10:00:00Z", "page_path": "/home", "event_name": "view", "visitor_label": "访客丙"}
+    {"id": "H8", "visitor_id": "V-1003", "event_ts": "2026-11-17T10:00:00Z", "page_path": "/home", "event_name": "view", "visitor_label": "访客丙"},
+    {"id": "H11", "visitor_id": "V-1004", "event_ts": "2026-11-17T10:15:00Z", "page_path": "/comeback", "event_name": "view", "visitor_label": "访客丁（已关闭）"},
+    {"id": "H12", "visitor_id": "V-1004", "event_ts": "2026-11-17T10:16:30Z", "page_path": "/comeback", "event_name": "click", "visitor_label": "访客丁（已关闭）"}
   ]
 }

@@ -1,6 +1,7 @@
 import json
 
 from app.db import FIXTURES_DIR, connect
+from app.modules import late_hit_sidecar
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
@@ -58,7 +59,7 @@ CREATE TABLE IF NOT EXISTS session_proofs (
   ended_at TEXT,
   created_at TEXT NOT NULL
 );
-"""
+""" + late_hit_sidecar.SCHEMA
 
 
 def init_db():
@@ -87,10 +88,13 @@ def _seed_fixtures(conn):
             "INSERT INTO visitors(id, label, created_at) VALUES (?,?,?)",
             (v["id"], v["label"], v["created_at"]),
         )
-    # 基座：按访客整段落进一个 open 会话（超时切分留给功能题空桩）
+    # 基座：按访客整段落进一个会话（超时切分留给功能题空桩）；
+    # 夹具可在访客项上声明 session_status='closed' 构造「无 open 仅有 closed」场景。
     for visitor_id, group in _group_hits(data.get("hits", [])).items():
         group = sorted(group, key=lambda h: (h["event_ts"], h["id"]))
-        sid = f"S-{visitor_id}-1"
+        status = _visitor_status(data.get("visitors", []), visitor_id)
+        suffix = "1" if status == "open" else "closed-1"
+        sid = f"S-{visitor_id}-{suffix}"
         conn.execute(
             "INSERT INTO sessions(id, visitor_id, started_at, ended_at, hit_count, status) VALUES (?,?,?,?,?,?)",
             (
@@ -99,7 +103,7 @@ def _seed_fixtures(conn):
                 group[0]["event_ts"],
                 group[-1]["event_ts"],
                 len(group),
-                "open",
+                status,
             ),
         )
         hit_ids = []
@@ -141,6 +145,13 @@ def _group_hits(hits):
     for h in hits:
         out.setdefault(h["visitor_id"], []).append(h)
     return out
+
+
+def _visitor_status(visitors, visitor_id: str) -> str:
+    for v in visitors:
+        if v["id"] == visitor_id:
+            return v.get("session_status", "open")
+    return "open"
 
 
 def idle_timeout_sec(conn) -> int:
